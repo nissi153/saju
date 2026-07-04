@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>觀相 · AI 관상가</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600;900&display=swap" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+<style>
+  :root {
+    --bg: #14110B;
+    --bg2: #1B160E;
+    --surface: #201A11;
+    --surface2: #262013;
+    --line: #3B321E;
+    --line-soft: #2C2515;
+    --gold: #D4AF5E;
+    --gold-deep: #A8842C;
+    --gold-dim: #8A713A;
+    --text: #EDE3CC;
+    --muted: #A29472;
+    --seal: #C24B3A;
+    --star-off: #4A3F26;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background:
+      radial-gradient(ellipse 90% 50% at 50% -5%, #2A2210 0%, transparent 60%),
+      linear-gradient(180deg, var(--bg2) 0%, var(--bg) 40%);
+    background-color: var(--bg);
+    color: var(--text);
+    font-family: "Noto Serif KR", serif;
+    min-height: 100vh;
+    padding: 52px 18px 70px;
+    line-height: 1.7;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+
+  /* ── 헤더 ── */
+  header { text-align: center; margin-bottom: 34px; }
+  .brand-mark {
+    display: inline-flex; align-items: center; gap: 10px;
+    font-size: 12px; letter-spacing: 0.55em; color: var(--gold-dim);
+    margin-bottom: 18px; text-indent: 0.55em;
+  }
+  .brand-mark::before, .brand-mark::after {
+    content: ""; width: 44px; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--gold-dim));
+  }
+  .brand-mark::after { background: linear-gradient(90deg, var(--gold-dim), transparent); }
+  h1 {
+    font-size: clamp(34px, 6.5vw, 50px); font-weight: 900;
+    letter-spacing: 0.22em; text-indent: 0.22em; line-height: 1.25;
+    background: linear-gradient(180deg, #F0DFAE 20%, var(--gold) 55%, var(--gold-deep) 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .subtitle { color: var(--muted); font-size: 15px; margin-top: 12px; }
+  .subtitle b { color: var(--gold); font-weight: 600; }
+
+  /* ── 안내문 ── */
+  .notice {
+    max-width: 620px; margin: 26px auto 0; padding: 13px 20px;
+    border: 1px dashed var(--line); border-radius: 3px;
+    color: var(--muted); font-size: 13px; text-align: center; line-height: 1.8;
+  }
+
+  /* ── 버튼 ── */
+  .controls { display: flex; justify-content: center; gap: 12px; margin: 30px 0 26px; flex-wrap: wrap; }
+  .btn {
+    font-family: inherit; font-size: 15px; font-weight: 600; letter-spacing: 0.14em;
+    padding: 13px 30px; border-radius: 3px; cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn-gold {
+    color: #1A1508; border: none;
+    background: linear-gradient(180deg, #E4C579, var(--gold) 45%, var(--gold-deep));
+    box-shadow: 0 2px 14px rgba(212, 175, 94, 0.22);
+  }
+  .btn-gold:hover { box-shadow: 0 4px 20px rgba(212, 175, 94, 0.38); }
+  .btn-ghost {
+    color: var(--gold); background: transparent; border: 1px solid var(--gold-dim);
+  }
+  .btn-ghost:hover { background: rgba(212, 175, 94, 0.08); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+
+  /* ── 사진/캔버스 무대 ── */
+  .stage {
+    position: relative; max-width: 620px; margin: 0 auto;
+    border: 1px solid var(--line); border-radius: 4px;
+    background: var(--surface); overflow: hidden;
+    display: none;
+  }
+  .stage.show { display: block; }
+  .stage canvas, .stage video { display: block; width: 100%; }
+  /* 골드 코너 브래킷 */
+  .stage::before, .stage::after,
+  .stage .corner-b::before, .stage .corner-b::after {
+    content: ""; position: absolute; width: 26px; height: 26px;
+    border-color: var(--gold); border-style: solid; z-index: 3; pointer-events: none;
+  }
+  .stage::before { top: 10px; left: 10px; border-width: 2px 0 0 2px; }
+  .stage::after  { top: 10px; right: 10px; border-width: 2px 2px 0 0; }
+  .stage .corner-b::before { bottom: 10px; left: 10px; border-width: 0 0 2px 2px; }
+  .stage .corner-b::after  { bottom: 10px; right: 10px; border-width: 0 2px 2px 0; }
+  /* 스캔 라인 */
+  .scanline {
+    position: absolute; left: 0; right: 0; height: 2px; z-index: 2;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    box-shadow: 0 0 18px rgba(212, 175, 94, 0.7);
+    animation: scan 1.8s ease-in-out infinite; display: none;
+  }
+  .stage.scanning .scanline { display: block; }
+  @keyframes scan { 0%, 100% { top: 4%; } 50% { top: 94%; } }
+
+  .status { text-align: center; color: var(--muted); font-size: 14px; margin: 18px 0 0; min-height: 24px; }
+  .status.gold { color: var(--gold); }
+  .status.err { color: #D98A7B; }
+
+  /* ── 결과 ── */
+  #resultArea { display: none; margin-top: 40px; }
+  #resultArea.show { display: block; animation: fadeUp 0.7s ease both; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+
+  .summary {
+    position: relative; text-align: center;
+    border: 1px solid var(--gold-dim); border-radius: 4px;
+    background: linear-gradient(180deg, var(--surface2), var(--surface));
+    padding: 40px 34px 34px; margin-bottom: 26px;
+  }
+  .summary::before {
+    content: ""; position: absolute; inset: 6px;
+    border: 1px solid var(--line); border-radius: 2px; pointer-events: none;
+  }
+  .summary h2 {
+    font-size: 15px; font-weight: 600; letter-spacing: 0.5em; text-indent: 0.5em;
+    color: var(--gold); margin-bottom: 20px;
+  }
+  .summary h2::after {
+    content: "◆"; display: block; font-size: 8px; color: var(--gold-dim); margin-top: 12px;
+  }
+  .summary p { font-size: 16px; line-height: 2.0; max-width: 620px; margin: 0 auto 10px; }
+  .summary p:last-child { margin-bottom: 0; }
+  .seal {
+    position: absolute; top: 18px; right: 18px; width: 52px; height: 52px;
+    border: 2.5px solid var(--seal); border-radius: 5px; color: var(--seal);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 17px; font-weight: 900; line-height: 1.15; text-align: center;
+    transform: rotate(-7deg); opacity: 0.9;
+    animation: stamp 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) both 0.5s;
+  }
+  @keyframes stamp {
+    from { transform: scale(2) rotate(-18deg); opacity: 0; }
+    to { transform: scale(1) rotate(-7deg); opacity: 0.9; }
+  }
+
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 16px;
+  }
+  .card {
+    border: 1px solid var(--line-soft); border-top: 2px solid var(--line);
+    border-radius: 4px; background: var(--surface);
+    padding: 22px 22px 20px; opacity: 0;
+    animation: fadeUp 0.6s ease both;
+    transition: border-color 0.25s ease, transform 0.25s ease;
+  }
+  .card:hover { border-top-color: var(--gold); transform: translateY(-2px); }
+  .card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .card-title { font-size: 17px; font-weight: 900; color: var(--gold); letter-spacing: 0.04em; }
+  .card-tag { font-size: 12px; color: var(--muted); letter-spacing: 0.1em; white-space: nowrap; }
+  .stars { margin: 8px 0 12px; font-size: 15px; letter-spacing: 3px; color: var(--gold); }
+  .stars .off { color: var(--star-off); }
+  .card-text { font-size: 14.5px; line-height: 1.85; color: var(--text); }
+  .metric { margin-top: 16px; }
+  .metric-label {
+    display: flex; justify-content: space-between;
+    font-size: 12px; color: var(--muted); margin-bottom: 7px;
+    font-variant-numeric: tabular-nums;
+  }
+  .metric-label b { color: var(--gold-dim); font-weight: 600; }
+  .gauge {
+    height: 5px; border-radius: 3px; background: var(--line-soft); overflow: hidden;
+  }
+  .gauge > i {
+    display: block; height: 100%; width: 0; border-radius: 3px;
+    background: linear-gradient(90deg, var(--gold-deep), var(--gold));
+    transition: width 1s cubic-bezier(0.25, 1, 0.35, 1);
+  }
+
+  footer {
+    text-align: center; margin-top: 56px; color: var(--muted);
+    font-size: 12px; letter-spacing: 0.12em; line-height: 2;
+  }
+  footer::before {
+    content: "◆"; display: block; font-size: 8px; color: var(--gold-dim); margin-bottom: 14px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .scanline, .seal, .card, #resultArea.show, .gauge > i { animation: none !important; transition: none !important; opacity: 1 !important; }
+  }
+  @media (max-width: 480px) {
+    body { padding: 36px 12px 50px; }
+    .summary { padding: 32px 20px 26px; }
+    .seal { width: 44px; height: 44px; font-size: 14px; }
+  }
+  .home-link{position:fixed;top:14px;left:14px;z-index:50;font-size:12px;text-decoration:none;
+    padding:7px 14px;border-radius:999px;color:var(--muted);border:1px solid var(--line);
+    background:rgba(20,17,11,.85)}
+  .home-link:hover{color:var(--gold);border-color:var(--gold)}
+</style>
+</head>
+<body>
+<a class="home-link" href="AI운세.html">⌂ AI 운세 홈</a>
+<div class="wrap">
+
+  <header>
+    <div class="brand-mark">觀相所</div>
+    <h1>觀相 · AI 관상가</h1>
+    <p class="subtitle">얼굴 <b>468개 지점</b>을 인식해 전통 관상 이론으로 풀이해 드립니다</p>
+    <div class="notice">
+      ※ 본 프로그램은 오락용입니다. 결과는 과학적 근거가 없으며 재미로만 봐 주세요.<br />
+      사진은 서버로 전송되지 않고 전부 내 브라우저 안에서만 처리됩니다.
+    </div>
+  </header>
+
+  <div class="controls">
+    <button class="btn btn-gold" id="btnUpload">📷 사진 업로드</button>
+    <button class="btn btn-ghost" id="btnCam">🎥 웹캠 켜기</button>
+    <button class="btn btn-gold" id="btnShot" style="display:none">✦ 이 모습으로 관상 보기</button>
+  </div>
+  <input type="file" id="fileInput" accept="image/*" style="display:none" />
+
+  <div class="stage" id="stage">
+    <div class="corner-b"></div>
+    <div class="scanline"></div>
+    <video id="video" autoplay playsinline muted style="display:none"></video>
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <p class="status" id="status"></p>
+
+  <div id="resultArea">
+    <div class="summary">
+      <div class="seal">觀相</div>
+      <h2>總評 · 총평</h2>
+      <div id="summaryText"></div>
+    </div>
+    <div class="grid" id="cards"></div>
+  </div>
+
+  <footer>觀相 AI · 모든 처리는 브라우저에서만 이루어집니다</footer>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const stage = $("stage"), canvas = $("canvas"), video = $("video");
+  const ctx = canvas.getContext("2d");
+  const statusEl = $("status");
+  let camStream = null;
+
+  const setStatus = (msg, cls = "") => {
+    statusEl.textContent = msg;
+    statusEl.className = "status " + cls;
+  };
+
+  /* ── MediaPipe FaceMesh 초기화 ── */
+  const faceMesh = new FaceMesh({
+    locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`,
+  });
+  faceMesh.setOptions({
+    maxNumFaces: 1,
+    refineLandmarks: true,
+    minDetectionConfidence: 0.5,
+    minTrackingConfidence: 0.5,
+  });
+  faceMesh.onResults(onResults);
+
+  /* ── 입력: 사진 업로드 ── */
+  $("btnUpload").onclick = () => $("fileInput").click();
+  $("fileInput").onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    stopCam();
+    const img = new Image();
+    img.onload = () => {
+      drawToCanvas(img, img.naturalWidth, img.naturalHeight);
+      analyze();
+    };
+    img.onerror = () => setStatus("이미지를 불러오지 못했습니다. 다른 파일로 시도해 주세요.", "err");
+    img.src = URL.createObjectURL(file);
+  };
+
+  /* ── 입력: 웹캠 ── */
+  $("btnCam").onclick = async () => {
+    if (camStream) { stopCam(); return; }
+    try {
+      camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+      video.srcObject = camStream;
+      video.style.display = "block";
+      canvas.style.display = "none";
+      stage.classList.add("show");
+      $("btnShot").style.display = "";
+      $("btnCam").textContent = "🎥 웹캠 끄기";
+      setStatus("얼굴이 화면 가운데 오도록 한 뒤 아래 버튼을 눌러 주세요.");
+    } catch {
+      setStatus("웹캠을 켤 수 없습니다. 브라우저의 카메라 권한을 확인해 주세요.", "err");
+    }
+  };
+  $("btnShot").onclick = () => {
+    if (!camStream) return;
+    drawToCanvas(video, video.videoWidth, video.videoHeight);
+    stopCam();
+    analyze();
+  };
+  function stopCam() {
+    if (camStream) { camStream.getTracks().forEach((t) => t.stop()); camStream = null; }
+    video.style.display = "none";
+    canvas.style.display = "block";
+    $("btnShot").style.display = "none";
+    $("btnCam").textContent = "🎥 웹캠 켜기";
+  }
+
+  function drawToCanvas(src, sw, sh) {
+    const maxW = 720;
+    const scale = Math.min(1, maxW / sw);
+    canvas.width = Math.round(sw * scale);
+    canvas.height = Math.round(sh * scale);
+    ctx.drawImage(src, 0, 0, canvas.width, canvas.height);
+    stage.classList.add("show");
+  }
+
+  async function analyze() {
+    $("resultArea").classList.remove("show");
+    stage.classList.add("scanning");
+    setStatus("얼굴 468개 지점을 읽는 중입니다…", "gold");
+    try {
+      await faceMesh.send({ image: canvas });
+    } catch {
+      stage.classList.remove("scanning");
+      setStatus("얼굴 인식 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인한 뒤 새로고침해 주세요.", "err");
+    }
+  }
+
+  /* ── 분석 결과 처리 ── */
+  function onResults(results) {
+    stage.classList.remove("scanning");
+    const lms = results.multiFaceLandmarks && results.multiFaceLandmarks[0];
+    if (!lms) {
+      setStatus("사진에서 얼굴을 찾지 못했습니다. 정면 얼굴이 잘 보이는 사진으로 다시 시도해 주세요.", "err");
+      return;
+    }
+    const W = canvas.width, H = canvas.height;
+    const P = (i) => ({ x: lms[i].x * W, y: lms[i].y * H });
+    const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+    /* 주요 계측 */
+    const faceW = dist(P(234), P(454));           // 광대 폭
+    const faceH = dist(P(10), P(152));            // 이마 위 ~ 턱 끝
+    const browMid = { x: (P(105).x + P(334).x) / 2, y: (P(105).y + P(334).y) / 2 };
+    const noseBase = P(2);
+    const upper = dist(P(10), browMid);           // 상정
+    const middle = dist(browMid, noseBase);       // 중정
+    const lower = dist(noseBase, P(152));         // 하정
+    const eyeW = (dist(P(33), P(133)) + dist(P(362), P(263))) / 2;
+    const eyeGap = dist(P(133), P(362));
+    const noseW = dist(P(129), P(358));
+    const mouthW = dist(P(61), P(291));
+    const jawW = dist(P(58), P(288));
+
+    /* 좌우 대칭도 */
+    const midX = (P(1).x + P(9).x + P(152).x) / 3;
+    const pairs = [[33, 263], [61, 291], [130, 359], [234, 454], [58, 288]];
+    let asym = 0;
+    pairs.forEach(([l, r]) => {
+      asym += Math.abs((midX - P(l).x) - (P(r).x - midX));
+    });
+    const symmetry = Math.max(0, 1 - asym / pairs.length / (faceW * 0.5));
+
+    const m = {
+      ratio: faceH / faceW,
+      forehead: upper / faceH,
+      eye: eyeW / faceW,
+      eyeGap: eyeGap / eyeW,
+      nose: noseW / faceW,
+      mouth: mouthW / faceW,
+      jaw: jawW / faceW,
+      symmetry,
+      thirds: [upper / faceH, middle / faceH, lower / faceH],
+    };
+
+    drawOverlay(lms, W, H, browMid.y, noseBase.y);
+    render(m);
+    setStatus("관상 풀이가 완성되었습니다. 아래에서 확인하세요 👇", "gold");
+  }
+
+  /* ── 오버레이: 468 지점 + 삼정선 ── */
+  function drawOverlay(lms, W, H, browY, noseY) {
+    ctx.fillStyle = "rgba(212,175,94,0.75)";
+    lms.forEach((l) => {
+      ctx.beginPath();
+      ctx.arc(l.x * W, l.y * H, Math.max(1, W / 640), 0, Math.PI * 2);
+      ctx.fill();
+    });
+    const lines = [lms[10].y * H, browY, noseY, lms[152].y * H];
+    ctx.strokeStyle = "rgba(212,175,94,0.55)";
+    ctx.setLineDash([9, 7]);
+    ctx.lineWidth = 1.4;
+    lines.forEach((y) => {
+      ctx.beginPath();
+      ctx.moveTo(W * 0.06, y);
+      ctx.lineTo(W * 0.94, y);
+      ctx.stroke();
+    });
+    ctx.setLineDash([]);
+  }
+
+  /* ── 해석 사전: 구간별 3단 풀이(전부 덕담 톤) ── */
+  const pick = (v, bands) => bands.find((b) => v < b.lt) || bands[bands.length - 1];
+
+  function interpret(m) {
+    const cards = [];
+
+    cards.push({
+      tag: "전체 인상", metric: "세로/가로 비율", value: m.ratio, max: 1.8,
+      ...pick(m.ratio, [
+        { lt: 1.28, title: "얼굴형 · 둥근 상(圓相)", stars: 4,
+          text: "얼굴이 넉넉하고 둥근 편입니다. 관상에서 원만한 상은 대인관계의 복을 타고났다고 봅니다. 사람이 모이는 자리에서 중심이 되고, 인덕으로 어려움을 넘기는 유형입니다." },
+        { lt: 1.42, title: "얼굴형 · 조화로운 상(調和相)", stars: 5,
+          text: "가로세로 비율이 조화롭습니다. 어느 한쪽으로 치우치지 않은 상은 상황 판단이 균형 잡혀 있고, 여러 분야에서 두루 능력을 발휘하는 상으로 풀이합니다." },
+        { lt: 99, title: "얼굴형 · 갸름한 상(淸秀相)", stars: 4,
+          text: "얼굴선이 갸름하고 단정합니다. 관상에서 청수한 상은 지적이고 감각이 섬세하다고 보며, 기획·학문·예술처럼 머리와 안목을 쓰는 일에서 빛을 내는 유형입니다." },
+      ]),
+    });
+
+    cards.push({
+      tag: "초년운", metric: "이마(상정) 비율", value: m.forehead, max: 0.45,
+      ...pick(m.forehead, [
+        { lt: 0.27, title: "이마 · 단단한 이마", stars: 4,
+          text: "이마가 야무지게 자리 잡았습니다. 초년에 스스로 길을 개척하며 실전 감각을 일찍 익히는 상으로, 몸으로 배운 것이 평생의 밑천이 되는 유형입니다." },
+        { lt: 0.34, title: "이마 · 반듯한 이마", stars: 5,
+          text: "이마의 비율이 반듯합니다. 초년운이 안정적이어서 배움과 성장의 시기를 무난히 지나고, 윗사람의 도움을 자연스럽게 받는 상으로 풀이합니다." },
+        { lt: 99, title: "이마 · 넓은 이마(天庭飽滿)", stars: 5,
+          text: "이마가 시원하게 넓습니다. 관상에서 천정이 가득 찬 상은 지혜와 초년 귀인운이 두텁다 하여, 배움이 곧 복으로 이어지는 귀한 배치로 봅니다." },
+      ]),
+    });
+
+    cards.push({
+      tag: "심성·안목", metric: "눈 크기 비율", value: m.eye, max: 0.45,
+      ...pick(m.eye, [
+        { lt: 0.24, title: "눈 · 깊은 눈", stars: 4,
+          text: "눈매가 깊고 신중합니다. 관상에서 정기가 안으로 모인 눈은 관찰력과 집중력이 뛰어나다고 보며, 큰일일수록 침착하게 처리하는 상입니다." },
+        { lt: 0.29, title: "눈 · 맑은 눈", stars: 5,
+          text: "눈의 크기와 균형이 좋습니다. 눈은 마음의 창이라 하였으니, 정기가 고른 눈은 판단이 공정하고 사람을 보는 안목이 뛰어난 상으로 풀이합니다." },
+        { lt: 99, title: "눈 · 큰 눈(明眸)", stars: 5,
+          text: "눈이 크고 또렷합니다. 밝은 눈은 표현력과 공감 능력이 풍부하다고 보며, 사람의 마음을 얻어 일을 이루는 상으로 풀이합니다." },
+      ]),
+    });
+
+    cards.push({
+      tag: "그릇·시야", metric: "눈 사이 간격", value: m.eyeGap, max: 1.8,
+      ...pick(m.eyeGap, [
+        { lt: 0.95, title: "미간 · 집중의 미간", stars: 4,
+          text: "미간이 야무지게 모여 있습니다. 관상에서는 한 가지에 힘을 모으는 상으로 보아, 전문 분야를 깊게 파고들어 일가를 이루는 유형입니다." },
+        { lt: 1.25, title: "미간 · 균형 잡힌 미간", stars: 5,
+          text: "미간의 간격이 균형 잡혀 있습니다. 집중할 때와 넓게 볼 때를 가릴 줄 아는 상으로, 일과 사람 사이의 조율에 능하다고 풀이합니다." },
+        { lt: 99, title: "미간 · 트인 미간(印堂開闊)", stars: 5,
+          text: "미간이 넓고 시원합니다. 인당(印堂)이 트이면 운이 드나드는 길이 넓다 하여, 낙천적이고 포용력이 커 귀인이 따르는 상으로 봅니다." },
+      ]),
+    });
+
+    cards.push({
+      tag: "중년·재물운", metric: "코 너비 비율", value: m.nose, max: 0.45,
+      ...pick(m.nose, [
+        { lt: 0.24, title: "코 · 단정한 코(俊鼻)", stars: 4,
+          text: "콧대가 단정하고 정갈합니다. 관상에서 준수한 코는 자존감과 원칙이 분명하다고 보며, 재물을 착실히 쌓아 오래 지키는 상으로 풀이합니다." },
+        { lt: 0.30, title: "코 · 복코(財帛豊隆)", stars: 5,
+          text: "코가 시원하게 발달했습니다. 관상에서 말하는 복코로, 중년의 재물운이 두텁고 자기 사업이나 큰 책임을 맡아 성취를 이루는 상으로 풀이합니다." },
+        { lt: 99, title: "코 · 너른 코(富貴鼻)", stars: 5,
+          text: "코가 넉넉하고 풍성합니다. 재백궁이 넓은 상은 씀씀이가 크되 들어오는 복도 크다 하여, 사람과 재물을 함께 모으는 그릇으로 봅니다." },
+      ]),
+    });
+
+    cards.push({
+      tag: "애정·식복", metric: "입 너비 비율", value: m.mouth, max: 0.6,
+      ...pick(m.mouth, [
+        { lt: 0.34, title: "입 · 야무진 입", stars: 4,
+          text: "입매가 야무집니다. 말을 아끼되 한 번 뱉은 말은 지키는 상으로, 신용이 쌓여 늦게 갈수록 사람이 따르는 유형입니다." },
+        { lt: 0.42, title: "입 · 단정한 입", stars: 5,
+          text: "입의 크기가 알맞고 단정합니다. 말과 행동이 일치하는 상으로, 애정운과 대인운이 잔잔하고 길게 이어진다고 봅니다." },
+        { lt: 99, title: "입 · 큰 입(海口)", stars: 5,
+          text: "입이 시원하게 큽니다. 관상에서 해구는 배포와 식복의 상징이라, 통이 크고 사람을 넉넉히 품어 따르는 이가 많은 상으로 풀이합니다." },
+      ]),
+    });
+
+    cards.push({
+      tag: "말년운", metric: "턱 너비 비율", value: m.jaw, max: 1.1,
+      ...pick(m.jaw, [
+        { lt: 0.76, title: "턱 · 갸름한 턱", stars: 4,
+          text: "턱선이 갸름합니다. 감각이 섬세하고 유행에 밝은 상으로, 말년에는 물질보다 취향과 사람으로 풍요로워지는 유형입니다." },
+        { lt: 0.86, title: "턱 · 균형 잡힌 턱", stars: 5,
+          text: "턱의 비율이 안정적입니다. 지구력과 유연함을 겸비한 상으로, 말년운이 완만하게 상승하며 곳간이 든든해진다고 풀이합니다." },
+        { lt: 99, title: "턱 · 두터운 턱(地閣方圓)", stars: 5,
+          text: "턱이 두텁고 든든합니다. 지각이 넉넉한 상은 말년의 복과 아랫사람의 덕이 크다 하여, 나이 들수록 존경받는 배치로 봅니다." },
+      ]),
+    });
+
+    const symStars = m.symmetry > 0.93 ? 5 : m.symmetry > 0.88 ? 4 : 3;
+    cards.push({
+      tag: "운의 흐름", metric: "대칭도", value: m.symmetry, max: 1,
+      stars: symStars,
+      title: symStars >= 5 ? "좌우 균형 · 안정된 상" : "좌우 균형 · 개성 있는 상",
+      text: symStars >= 5
+        ? "좌우가 고르게 균형을 이루었습니다. 관상에서 균형 잡힌 상은 운의 기복이 적고 매사가 순리대로 풀린다고 보는 길한 배치입니다."
+        : "좌우의 개성이 살아 있는 얼굴입니다. 관상에서는 좌우가 다른 얼굴을 다재다능함의 표시로 보기도 합니다. 상황에 따라 다른 매력을 쓰는 유형입니다.",
+    });
+
+    /* 총평 */
+    const [t1, t2, t3] = m.thirds;
+    const spread = Math.max(t1, t2, t3) - Math.min(t1, t2, t3);
+    let s1;
+    if (spread < 0.08) {
+      s1 = "삼정(三停)이 고르게 균형을 이루었습니다. 초년·중년·말년의 운이 한쪽에 몰리지 않고 평생 고르게 흐르는, 관상에서 가장 귀하게 여기는 배치입니다.";
+    } else if (t1 >= t2 && t1 >= t3) {
+      s1 = "삼정(三停) 가운데 상정이 발달했습니다. 초년운과 지혜의 복이 두터워, 배움과 젊은 시절의 인연이 평생의 밑거름이 되는 상입니다.";
+    } else if (t2 >= t3) {
+      s1 = "삼정(三停) 가운데 중정이 발달했습니다. 인생의 허리인 중년운이 힘차게 흐르는 상으로, 일과 재물의 성취가 중년에 크게 꽃피는 배치입니다.";
+    } else {
+      s1 = "삼정(三停) 가운데 하정이 발달했습니다. 뒤로 갈수록 운이 차오르는 상으로, 말년의 복록과 사람 덕이 두터운 배치입니다.";
+    }
+    const summary = [s1, "곳곳에 복이 자리 잡은 좋은 상입니다. 상(相)보다 심(心)이라 했습니다. 좋은 마음이 좋은 관상을 만듭니다."];
+
+    return { cards, summary };
+  }
+
+  /* ── 렌더링 ── */
+  function render(m) {
+    const { cards, summary } = interpret(m);
+    $("summaryText").innerHTML = summary.map((s) => `<p>${s}</p>`).join("");
+
+    const starHtml = (n) =>
+      "★".repeat(n) + `<span class="off">${"★".repeat(5 - n)}</span>`;
+
+    $("cards").innerHTML = cards.map((c, i) => `
+      <div class="card" style="animation-delay:${0.12 * i + 0.15}s">
+        <div class="card-head">
+          <span class="card-title">${c.title}</span>
+          <span class="card-tag">${c.tag}</span>
+        </div>
+        <div class="stars">${starHtml(c.stars)}</div>
+        <p class="card-text">${c.text}</p>
+        <div class="metric">
+          <div class="metric-label"><b>${c.metric}</b><span>${c.value.toFixed(3)}</span></div>
+          <div class="gauge"><i data-w="${Math.min(100, (c.value / c.max) * 100)}"></i></div>
+        </div>
+      </div>`).join("");
+
+    $("resultArea").classList.add("show");
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        document.querySelectorAll(".gauge > i").forEach((el) => {
+          el.style.width = el.dataset.w + "%";
+        });
+      }, 120);
+    });
+    $("resultArea").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+})();
+</script>
+</body>
+</html>
