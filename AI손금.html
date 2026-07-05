@@ -483,7 +483,10 @@ async function analyzePalm(){
   const h=getHands();
   if(!h){setScan("손 인식 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인한 뒤 새로고침해 주세요.","err");return;}
   setScan("손바닥의 21개 지점을 찾는 중입니다…","gold");
-  try{await h.send({image:pcanvas});}
+  try{
+    try{h.reset();}catch(e){} /* 사진마다 독립 검출 — 추적 상태 이월 방지 */
+    await h.send({image:pcanvas});
+  }
   catch{setScan("손 인식에 실패했습니다. 인터넷 연결을 확인한 뒤 새로고침해 주세요.","err");}
 }
 
